@@ -165,9 +165,10 @@ end
 eval(expr)
 
 @doc """
-Material
+Enum type representing sample materials in VetLIMS.
 
-Enum type representing the materials given in VETLIMS. Can be created with `parse(Material, s)`,
+All possible sample materials should be represented by this type. The values are not
+stable across major versions of this package. Can be created with `parse(Material, s)`,
 but the string `s` must match exactly.  The canonical representation is in Danish.
 Can be displayed using `danish` and `english`.
 """ Material 

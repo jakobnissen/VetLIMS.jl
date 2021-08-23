@@ -1,7 +1,7 @@
 """
 VetLIMS
 
-This package contains functionality for reading sample information from VetLIMS.
+This package contains functionality for parsing sample information from VetLIMS.
 To use it, export data to a CSV containing a minimal set of rows (see the constant
 `NEEDED_ROWS`).
 """
@@ -13,7 +13,8 @@ using CSV
 const DATETIME_FORMAT = dateformat"dd/mm/yyyy HH.MM"
 const DATE_FORMAT = dateformat"dd/mm/yyyy"
 
-"Columns from CSV file exported from VetLIMS, in order"
+"Columns from CSV file exported from VetLIMS. To be parsed correctly to `LIMSRow`,
+the CSV file must contain these columns at minimum."
 const NEEDED_COLUMNS = Set([
     Symbol("Prøve id"),
     Symbol("Internt nr."),
@@ -191,8 +192,6 @@ end
 Base.show(io::IO, x::SagsNumber) = print(io, summary(x), "(\"", string(x), "\")")
 
 """
-    LIMSRow
-
 A struct containing the minimum relevant information about a sample needed for my
 workflows. Created in bulk by using `lims_rows`. See that function and this struct's
 fields for more details.

@@ -273,11 +273,12 @@ end
 eval(expr)
 
 @doc """
-Host
+Enum type representing the possible animal species in VetLIMS.
 
-Enum type representing the animal species. Can be created with `parse(Host, s)`,
-but the string `s` must match exactly. The canonical representation is in Danish.
-Can be displayed using `danish` and `english`.
+All possible animal species in VetLIMS should be represented by this type.
+The values are not stable across major versions of this package. Can be created
+with `parse(Host, s)`, but the string `s` must match exactly. The canonical
+representation is in Danish. Can be displayed using `danish` and `english`.
 """ Host 
 
 danish(x::Host) = @inbounds _HOSTS[Integer(x) + 1][2]
