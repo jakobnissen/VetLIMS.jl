@@ -234,6 +234,10 @@ function lims_rows(
     if !issubset(NEEDED_COLUMNS, propertynames(csv))
         error("Found wrong columns, expected $(sort(collect(NEEDED_COLUMNS)))")
     end
+
+    # By first making a map from column names to column number, then passing it
+    # to the actual parsing function, this code becomes robust against changes in
+    # the column order in the future, while remaining efficient. 
     namemap = (; ((sym, i) for (i, sym) in enumerate(propertynames(csv)))...)
     return map(row -> LIMSRow(row, namemap), csv)
 end
