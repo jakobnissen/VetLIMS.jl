@@ -83,6 +83,7 @@ If the subsample number is 0, it is assumed to be inapplicable.
 ```julia
 julia> SampleNumber(4, 0) # zero-subsample is omitted
 SampleNumber(4)
+```
 """
 struct SampleNumber
     num::UInt16
@@ -118,8 +119,10 @@ end
 The internal number ("V-nummer") used by VetLIMS for samples. It is identified
 by a 9-digit number.
 
+```julia
 julia> VNumber("V000012345") == VNumber(12345)
 true
+```
 """
 struct VNumber
     x::UInt32
