@@ -10,6 +10,7 @@ module VetLIMS
 using Dates
 using CSV
 
+const UTF8 = Union{String, SubString{String}}
 const DATETIME_FORMAT = dateformat"dd/mm/yyyy HH.MM"
 const DATE_FORMAT = dateformat"dd/mm/yyyy"
 
@@ -24,6 +25,8 @@ const NEEDED_COLUMNS = Set([
     :Modtagelsestidspunkt,
     :Udtagelsesdato
 ])
+
+struct Unsafe end
 
 "Get the English name of the object, or `nothing` if not applicable"
 function english end
@@ -92,7 +95,7 @@ end
 
 SampleNumber(x::Integer) = SampleNumber(UInt16(x), 0)
 
-function parse_dot(::Type{SampleNumber}, s::Union{String, SubString{String}})
+function parse_dot(::Type{SampleNumber}, s::UTF8)
     str = strip(s)
     p = findfirst(isequal(UInt8('.')), codeunits(str))
     return if p === nothing
@@ -126,28 +129,40 @@ true
 """
 struct VNumber
     x::UInt32
-    
-    function VNumber(x::Integer)
-        ux = UInt32(x)
-        if ux > UInt32(999_999_999)
-            throw(DomainError("Must be at most 9 digits", x))
-        end
-        new(ux)
-    end
+
+    VNumber(x::UInt32, ::Unsafe) = new(x)
 end
 
-function VNumber(s::Union{String, SubString{String}})
-    if ncodeunits(s) != 10 || codeunit(s, 1) != UInt8('V')
-        error("Invalid VNumber: \"", s, '"')
+function VNumber(x::Integer)
+    ux = UInt32(x)
+    if ux > UInt32(999_999_999)
+        throw(DomainError("Must be at most 9 digits", x))
     end
-    VNumber(parse(UInt32, view(s, 2:10)))
+    return VNumber(x, Unsafe())
+end
+
+Base.tryparse(::Type{VNumber}, s::AbstractString) = tryparse(VNumber, String(s))
+function Base.tryparse(::Type{VNumber}, s::UTF8)
+    if ncodeunits(s) != 10 || codeunit(s, 1) != UInt8('V')
+        return nothing
+    end
+    n = tryparse(UInt32, view(s, 2:10))
+    n === nothing && return nothing
+    n > UInt32(999_999_999) && return nothing
+    return VNumber(n, Unsafe())
+end
+
+function Base.parse(::Type{VNumber}, s::AbstractString)
+    result = tryparse(VNumber, s)
+    result === nothing && error("Invalid VNumber: \"", s, '"')
+    return result
 end
 
 Base.print(io::IO, v::VNumber) = print(io, 'V' * string(v.x, pad=9))
 Base.show(io::IO, v::VNumber) = print(io, summary(v), "(\"", string(v), "\")")
 
 """
-    SagsNumber(s::AbstractString)
+    SagsNumber
 
 Case number in VetLIMS. Identified by a 5-digit number followed by a 6-digit
 alphanumeric code. Instantiate it from a string with the format in the example, or
@@ -155,7 +170,7 @@ from two numbers:
 
 # Example
 ```julia
-julia> SagsNumber("SAG-01234-890AKM")
+julia> parse(SagsNumber, "SAG-01234-890AKM")
 SagsNumber("SAG-01234-890AKM")
 
 julia> SagsNumber(1234, 498859654) # base 36
@@ -166,28 +181,36 @@ struct SagsNumber
     numbers::UInt32
     letters::UInt32
 
-    function SagsNumber(n::Integer, l::Integer)
-        un, ul = UInt32(n), UInt32(l)
-        if un > UInt32(99999)
-            throw(DomainError("Must be at most 5 digits", un))
-        elseif ul > 0x81bf0fff
-            throw(DomainError("Must be at most \"ZZZZZZ\" base 36", ul))
-        end
-        new(un, ul)
-    end
+    SagsNumber(n::UInt32, L::UInt32, ::Unsafe) = new(n, L)
 end
 
-function SagsNumber(s::Union{String, SubString{String}})
+function SagsNumber(n::Integer, l::Integer)
+    un, ul = UInt32(n), UInt32(l)
+    if un > UInt32(99999)
+        throw(DomainError("Must be at most 5 digits", un))
+    elseif ul > 0x81bf0fff
+        throw(DomainError("Must be at most \"ZZZZZZ\" base 36", ul))
+    end
+    SagsNumber(un, ul, Unsafe())
+end
+
+Base.tryparse(::Type{SagsNumber}, s::AbstractString) = tryparse(SagsNumber, String(s))
+function Base.tryparse(::Type{SagsNumber}, s::UTF8)
     if ncodeunits(s) != 16 || !startswith(s, "SAG-") || codeunit(s, 10) != UInt8('-')
-        error("Invalid SagsNumber: \"", s, '"')
+        return nothing
     end
     numbers = parse(UInt32, view(s, 5:9))
+    numbers > UInt32(99999) && return nothing
     letters = parse(UInt32, view(s, 11:16), base=36)
-    SagsNumber(numbers, letters)
+    letters > 0x81bf0fff && return nothing
+    SagsNumber(numbers, letters, Unsafe())
 end
-SagsNumber(s::AbstractString) = SagsNumber(convert(String, s))
 
-matchnumber(s::SagsNumber, n::Integer) = s.numbers == n
+function Base.parse(::Type{SagsNumber}, s::AbstractString)
+    result = tryparse(SagsNumber, s)
+    result === nothing && error("Invalid SagsNumber: \"", s, '"')
+    return result
+end
 
 function Base.print(io::IO, x::SagsNumber)
     print(io, "SAG-" * string(x.numbers, pad=5) * '-' * uppercase(string(x.letters, base=36, pad=6)))
@@ -247,8 +270,8 @@ end
 
 function LIMSRow(row::CSV.Row, namemap::NamedTuple)
     samplenum = parse_dot(SampleNumber, row[getproperty(namemap, Symbol("Prøve id"))])
-    vnum = VNumber(row[getproperty(namemap, Symbol("Internt nr."))])
-    sag = SagsNumber(row[getproperty(namemap, Symbol("Sags ID"))])
+    vnum = parse(VNumber, row[getproperty(namemap, Symbol("Internt nr."))])
+    sag = parse(SagsNumber, row[getproperty(namemap, Symbol("Sags ID"))])
     material = let
         v = row[namemap.Materiale]
         ismissing(v) ? nothing : parse(Material, v)
