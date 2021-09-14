@@ -2,6 +2,7 @@ module Hosts
 
 import ..english, ..danish, ..dedup_categories
 
+# This list is exported from VetLIMS itself - all possible hosts
 const _HOSTS = dedup_categories(Tuple{String, Union{String, Nothing}}[
     ("Abe", "Monkey"),
     ("Agerhøne", "Grey partridge"),

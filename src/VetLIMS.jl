@@ -159,7 +159,11 @@ function Base.parse(::Type{VNumber}, s::AbstractString)
 end
 
 Base.print(io::IO, v::VNumber) = print(io, 'V' * string(v.x, pad=9))
-Base.show(io::IO, v::VNumber) = print(io, summary(v), "(\"", string(v), "\")")
+Base.show(io::IO, v::VNumber) = print(io, "vnum\"", string(v), '"')
+
+macro vnum_str(s)
+    parse(VNumber, s)
+end
 
 """
     SagsNumber
@@ -215,7 +219,11 @@ end
 function Base.print(io::IO, x::SagsNumber)
     print(io, "SAG-" * string(x.numbers, pad=5) * '-' * uppercase(string(x.letters, base=36, pad=6)))
 end
-Base.show(io::IO, x::SagsNumber) = print(io, summary(x), "(\"", string(x), "\")")
+Base.show(io::IO, x::SagsNumber) = print(io, "sag\"", string(x), '\"')
+
+macro sag_str(s)
+    parse(SagsNumber, s)
+end
 
 """
 A struct containing the minimum relevant information about a sample needed for my
@@ -302,7 +310,9 @@ export Materials,
     Host,
     SampleNumber,
     SagsNumber,
+    @sag_str,
     VNumber,
+    @vnum_str,
     danish,
     english,
     LIMSRow,
