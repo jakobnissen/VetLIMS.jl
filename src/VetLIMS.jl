@@ -99,11 +99,11 @@ function parse_dot(::Type{SampleNumber}, s::UTF8)
     str = strip(s)
     p = findfirst(isequal(UInt8('.')), codeunits(str))
     return if p === nothing
-        SampleNumber(parse(UInt16, str), 0)
+        SampleNumber(parse(UInt16, str, base=10), 0)
     else
         SampleNumber(
-            parse(UInt16, view(str, 1:prevind(str, p))),
-            parse(UInt16, view(str, p+1:lastindex(str)))
+            parse(UInt16, view(str, 1:prevind(str, p)), base=10),
+            parse(UInt16, view(str, p+1:lastindex(str)), base=10)
         )
     end
 end
@@ -146,7 +146,7 @@ function Base.tryparse(::Type{VNumber}, s::UTF8)
     if ncodeunits(s) != 10 || codeunit(s, 1) != UInt8('V')
         return nothing
     end
-    n = tryparse(UInt32, view(s, 2:10))
+    n = tryparse(UInt32, view(s, 2:10), base=10)
     n === nothing && return nothing
     n > UInt32(999_999_999) && return nothing
     return VNumber(n, Unsafe())
@@ -181,49 +181,98 @@ julia> SagsNumber(1234, 498859654) # base 36
 SagsNumber("SAG-01234-890AKM")
 ```
 """
-struct SagsNumber
+struct SagsNumberV1
     numbers::UInt32
     letters::UInt32
 
-    SagsNumber(n::UInt32, L::UInt32, ::Unsafe) = new(n, L)
+    SagsNumberV1(n::UInt32, L::UInt32, ::Unsafe) = new(n, L)
 end
 
-function SagsNumber(n::Integer, l::Integer)
+function SagsNumberV1(n::Integer, l::Integer)
     un, ul = UInt32(n), UInt32(l)
     if un > UInt32(99999)
         throw(DomainError("Must be at most 5 digits", un))
     elseif ul > 0x81bf0fff
         throw(DomainError("Must be at most \"ZZZZZZ\" base 36", ul))
     end
-    SagsNumber(un, ul, Unsafe())
+    SagsNumberV1(un, ul, Unsafe())
 end
 
-Base.tryparse(::Type{SagsNumber}, s::AbstractString) = tryparse(SagsNumber, String(s))
-function Base.tryparse(::Type{SagsNumber}, s::UTF8)
+function Base.tryparse(::Type{SagsNumberV1}, s::UTF8)
     if ncodeunits(s) != 16 || !startswith(s, "SAG-") || codeunit(s, 10) != UInt8('-')
         return nothing
     end
-    numbers = parse(UInt32, view(s, 5:9))
+    numbers = tryparse(UInt32, view(s, 5:9), base=10)
+    numbers === nothing && return nothing
     numbers > UInt32(99999) && return nothing
-    letters = parse(UInt32, view(s, 11:16), base=36)
-    letters > 0x81bf0fff && return nothing
-    SagsNumber(numbers, letters, Unsafe())
+    letters = tryparse(UInt32, view(s, 11:16), base=36)
+    letters === nothing && return nothing
+    letters > 0x81bf0fff && return nothing # ZZZZZZ base 36
+    SagsNumberV1(numbers, letters, Unsafe())
 end
 
-function Base.parse(::Type{SagsNumber}, s::AbstractString)
-    result = tryparse(SagsNumber, s)
-    result === nothing && error("Invalid SagsNumber: \"", s, '"')
+function Base.print(io::IO, x::SagsNumberV1)
+    print(io, "SAG-" * string(x.numbers, pad=5) * '-' * uppercase(string(x.letters, base=36, pad=6)))
+end
+
+struct SagsNumberV2
+    year::UInt32
+    numbers::UInt32
+
+    SagsNumberV2(y::UInt32, n::UInt32, ::Unsafe) = new(y, n)
+end
+
+function SagsNumberV2(n::Integer, l::Integer)
+    uy, un = UInt32(n), UInt32(l)
+    if un > UInt32(99999)
+        throw(DomainError("Must be at most 5 digits", un))
+    elseif !in(uy, 2000:2100)
+        throw(DomainError("Year must be in 2020:2100", uy))
+    end
+    SagsNumberV1(uy, un, Unsafe())
+end
+
+function Base.tryparse(::Type{SagsNumberV2}, s::UTF8)
+    if ncodeunits(s) != 10 || codeunit(s, 5) != UInt8('-')
+        return nothing
+    end
+    year = tryparse(UInt32, view(s, 1:4), base=10)
+    year === nothing && return nothing
+    year in 2000:2100 || return nothing
+    numbers = tryparse(UInt32, view(s, 6:10), base=10)
+    numbers === nothing && return nothing
+    numbers > UInt32(99999) && return nothing
+    SagsNumberV2(year, numbers, Unsafe())
+end
+
+function Base.print(io::IO, x::SagsNumberV2)
+    print(io, string(x.year, pad=4) * '-' * string(x.numbers, pad=5))
+end
+
+const SagsNumber = Union{SagsNumberV1, SagsNumberV2}
+
+function Base.tryparse(::Type{T}, s::AbstractString) where {T <: SagsNumber}
+    tryparse(T, String(s))
+end
+
+function Base.parse(::Type{T}, s::AbstractString) where {T <: SagsNumber}
+    result = tryparse(T, s)
+    result === nothing && error("Invalid $T: \"", s, '"')
     return result
 end
 
-function Base.print(io::IO, x::SagsNumber)
-    print(io, "SAG-" * string(x.numbers, pad=5) * '-' * uppercase(string(x.letters, base=36, pad=6)))
+function Base.tryparse(::Type{SagsNumber}, s::UTF8)
+    y = tryparse(SagsNumberV1, s)
+    y === nothing || return y
+    tryparse(SagsNumberV2, s)
 end
-Base.show(io::IO, x::SagsNumber) = print(io, "sag\"", string(x), '\"')
 
 macro sag_str(s)
-    parse(SagsNumber, s)
+    y = tryparse(SagsNumber, s)
+    y === nothing ? error("Invalid SagsNumber: \"", s, "\"") : y
 end
+
+Base.show(io::IO, x::SagsNumber) = print(io, "sag\"", string(x), '\"')
 
 """
 A struct containing the minimum relevant information about a sample needed for my
@@ -248,23 +297,8 @@ columns at `NEEDED_COLUMNS` at minimum, in any order. Certain assumptions are ma
 about the format of columns. If these are violated, you probably need to review
 the source code.
 """
-function lims_rows(
-    io::IO,
-    delim=';',
-    decimal=','
-)
-    csv = CSV.File(io,
-        decimal=decimal,
-        delim=delim,
-        strict=true,
-        lazystrings=true,
-        dateformats=Dict(
-            Symbol("(Skal ikke ændres) Ændret")  => DATETIME_FORMAT,
-            :Oprettet => DATETIME_FORMAT,
-            :Modtagelsestidspunkt => DATETIME_FORMAT,
-            :Udtagelsesdato => DATE_FORMAT,
-        )
-    )
+function lims_rows(io::IO)
+    csv = CSV.File(io, strict=true, types=String)
     if !issubset(NEEDED_COLUMNS, propertynames(csv))
         error("Found wrong columns, expected $(sort(collect(NEEDED_COLUMNS)))")
     end
@@ -288,10 +322,10 @@ function LIMSRow(row::CSV.Row, namemap::NamedTuple)
         v = row[namemap.Dyreart]
         ismissing(v) ? nothing : parse(Host, v)
     end
-    receivedate = row[namemap.Modtagelsestidspunkt]
+    receivedate = DateTime(row[namemap.Modtagelsestidspunkt], DATETIME_FORMAT)
     sampledate = let
         v = row[namemap.Udtagelsesdato]
-        ismissing(v) ? nothing : v
+        ismissing(v) ? nothing : Date(v, DATE_FORMAT)
     end
     LIMSRow(
         samplenum,
