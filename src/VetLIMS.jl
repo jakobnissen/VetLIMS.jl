@@ -83,7 +83,7 @@ A struct that contains the sample number and subsample number. In e.g.
 If the subsample number is 0, it is assumed to be inapplicable.
 
 # Examples
-```julia
+```
 julia> SampleNumber(4, 0) # zero-subsample is omitted
 SampleNumber(4)
 ```
@@ -122,7 +122,7 @@ end
 The internal number ("V-nummer") used by VetLIMS for samples. It is identified
 by a 9-digit number.
 
-```julia
+```
 julia> VNumber("V000012345") == VNumber(12345)
 true
 ```
@@ -173,7 +173,7 @@ alphanumeric code. Instantiate it from a string with the format in the example, 
 from two numbers:
 
 # Example
-```julia
+```
 julia> parse(SagsNumber, "SAG-01234-890AKM")
 SagsNumber("SAG-01234-890AKM")
 
@@ -227,7 +227,7 @@ function SagsNumberV2(n::Integer, l::Integer)
     if un > UInt32(99999)
         throw(DomainError("Must be at most 5 digits", un))
     elseif !in(uy, 2000:2100)
-        throw(DomainError("Year must be in 2020:2100", uy))
+        throw(DomainError("Year must be in 2000:2100", uy))
     end
     SagsNumberV1(uy, un, Unsafe())
 end
@@ -268,8 +268,7 @@ function Base.tryparse(::Type{SagsNumber}, s::UTF8)
 end
 
 macro sag_str(s)
-    y = tryparse(SagsNumber, s)
-    y === nothing ? error("Invalid SagsNumber: \"", s, "\"") : y
+    parse(SagsNumber, s)
 end
 
 Base.show(io::IO, x::SagsNumber) = print(io, "sag\"", string(x), '\"')
