@@ -9,6 +9,7 @@ module VetLIMS
 
 using Dates
 using CSV
+using DataFrames
 
 const UTF8 = Union{String, SubString{String}}
 const DATETIME_FORMAT = dateformat"dd/mm/yyyy HH.MM"
@@ -27,53 +28,6 @@ const NEEDED_COLUMNS = Set([
 ])
 
 struct Unsafe end
-
-"Get the English name of the object, or `nothing` if not applicable"
-function english end
-
-"Get the Danish name of the object"
-function danish end
-
-# To create enums, we fetch a vector of (danish, english) names from VetLIMS,
-# then we use to_symbol to create valid Julia symbols from the Danish names,
-# then make sure there are not any valid duplicates.
-# This function is then used to create the enums in their respective files.
-function dedup_categories(v::Vector{Tuple{String, Union{Nothing, String}}})
-    d = Dict{Symbol, Tuple{String, Union{Nothing, String}}}()
-    for (da, en) in v
-        sym = to_symbol(da)
-        existing = get(d, sym, nothing)
-        if existing !== nothing
-            oldda, olden = existing
-            if oldda == da && olden in (nothing, en)
-                d[sym] = (da, en)
-            else
-                error("Duplicate symbol: \"", sym, '"')
-            end
-        else
-            d[sym] = (da, en)
-        end
-    end
-    return sort!([(k, v[1], v[2]) for (k, v) in d])
-end
-
-function to_symbol(s::String)
-    v = Char[]
-    for char in s
-        if isletter(char) || isdigit(char)
-            push!(v, char)
-        elseif !isempty(v) && last(v) != '_'
-            push!(v, '_')
-        end
-    end
-    Symbol(join(v))
-end
-
-include("hosts.jl")
-using .Hosts
-
-include("materials.jl")
-using .Materials
 
 """
     SampleNumber(x::Integer)
@@ -123,7 +77,7 @@ The internal number ("V-nummer") used by VetLIMS for samples. It is identified
 by a 9-digit number.
 
 ```
-julia> VNumber("V000012345") == VNumber(12345)
+julia> parse(VNumber, "V000012345") == VNumber(12345)
 true
 ```
 """
@@ -283,8 +237,8 @@ struct LIMSRow
     vnum::VNumber
     sag::SagsNumber
     sampledate::Union{Nothing, Date}
-    material::Union{Nothing, Material}
-    host::Host
+    material::Union{Nothing, String}
+    host::String
     receivedate::DateTime
 end
 
@@ -315,12 +269,9 @@ function LIMSRow(row::CSV.Row, namemap::NamedTuple)
     sag = parse(SagsNumber, row[getproperty(namemap, Symbol("Sags ID"))])
     material = let
         v = row[namemap.Materiale]
-        ismissing(v) ? nothing : parse(Material, v)
+        ismissing(v) ? nothing : v
     end
-    host = let
-        v = row[namemap.Dyreart]
-        ismissing(v) ? nothing : parse(Host, v)
-    end
+    host = row[namemap.Dyreart]
     receivedate = DateTime(row[namemap.Modtagelsestidspunkt], DATETIME_FORMAT)
     sampledate = let
         v = row[namemap.Udtagelsesdato]
@@ -337,17 +288,11 @@ function LIMSRow(row::CSV.Row, namemap::NamedTuple)
     )
 end
 
-export Materials,
-    Material,
-    Hosts,
-    Host,
-    SampleNumber,
+export SampleNumber,
     SagsNumber,
     @sag_str,
     VNumber,
     @vnum_str,
-    danish,
-    english,
     LIMSRow,
     lims_rows
 
